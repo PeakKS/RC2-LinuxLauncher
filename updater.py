@@ -1,5 +1,8 @@
 #!/usr/bin/python
 import requests, json, os
+import sqlite3 as sql
+from datetime import datetime as timeconv
+import datetime
 
 buildsite_url = 'https://patcher-production.robocraft.org/Builds/'
 
@@ -19,16 +22,21 @@ headers = {
 buildlist_response = requests.get(buildsite_url + 'builds_index.json', headers=headers)
 buildlist = json.loads(buildlist_response.text)
 print(f'Found {len(buildlist)} builds')
-
 latest_build = buildlist['AvailableBuilds'].pop(-1)
+
 print(f'Attempting to download latest build "{latest_build}"')
-
 build = requests.get( buildsite_url + 'build_' + latest_build + '.json')
-
 build_files = json.loads(build.text)['Entries']
 
-directory_list = {}
-file_list = []
+db = sql.connect('updater.db')
+cur = db.cursor()
+cur.execute("""
+    CREATE TABLE IF NOT EXISTS TIMESTAMPS (
+        path TEXT UNIQUE,
+        timestamp TEXT
+    )
+""")
+
 basepath = os.getcwd()
 count = 0
 total = len(build_files)
@@ -38,10 +46,20 @@ for file in build_files:
     if not os.path.exists(directory):
         os.makedirs(directory)
 
-    downloadurl = f'{buildsite_url}{latest_build}/Game/{file["RelativePath"]}'
+    cur.execute(f'INSERT INTO TIMESTAMPS (path, timestamp) VALUES ("{file["RelativePath"]}", "{file["LastWriting"]}")')
+    cur.execute(f'SELECT timestamp from TIMESTAMPS WHERE path = "{file["RelativePath"]}"')
+    current_file_time = cur.fetchall()[0][0]
+    local = timeconv.strptime(current_file_time, "%Y-%m-%d %H:%M:%SZ")
+    remote = timeconv.strptime(file["LastWriting"], "%Y-%m-%d %H:%M:%SZ")
+    difference = remote - local
+
     count += 1
-    print(f'Downloading ({count}/{total}) {downloadurl} ...')
-    download_response = requests.get(downloadurl, headers=headers)
-    open(filepath, 'wb').write(download_response.content)
+    downloadurl = f'{buildsite_url}{latest_build}/Game/{file["RelativePath"]}'
+    if difference > datetime.timedelta(minutes=0) or not os.path.isfile(filepath):
+        print(f'Downloading ({count}/{total}) {downloadurl} ...')
+        download_response = requests.get(downloadurl, headers=headers)
+        open(filepath, 'wb').write(download_response.content)
+    else:
+        print(f'Skipping ({count}/{total}) {downloadurl} ... Up To Date')
 
 print("Done!")
