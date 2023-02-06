@@ -55,7 +55,7 @@ for file in build_files:
 
     count += 1
     downloadurl = f'{buildsite_url}{latest_build}/Game/{file["RelativePath"]}'
-    if difference > datetime.timedelta(minutes=0) or not os.path.isfile(filepath):
+    if difference > datetime.timedelta(minutes=0) or not os.path.isfile(filepath) or os.path.getsize(filepath) != file["Size"]:
         print(f'Downloading ({count}/{total}) {downloadurl} ...')
         download_response = requests.get(downloadurl, headers=headers)
         open(filepath, 'wb').write(download_response.content)
